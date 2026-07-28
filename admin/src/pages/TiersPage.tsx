@@ -163,7 +163,6 @@ export default function TiersPage() {
                       {tier.code}
                     </code>
                   </TableCell>
-                  <TableCell>{tier.dailyCostBudgetMicros < 0 ? <Badge variant="secondary">未启用</Badge> : `$${(tier.dailyCostBudgetMicros / 1_000_000).toFixed(4)}`}</TableCell>
                   <TableCell className="font-medium text-slate-900">{tier.name}</TableCell>
                   <TableCell>
                     {tier.dailyQuota === -1 ? (
@@ -175,6 +174,7 @@ export default function TiersPage() {
                       <span className="text-slate-700">{tier.dailyQuota} 次/日</span>
                     )}
                   </TableCell>
+                  <TableCell>{tier.dailyCostBudgetMicros < 0 ? <Badge variant="secondary">未启用</Badge> : `$${(tier.dailyCostBudgetMicros / 1_000_000).toFixed(4)}`}</TableCell>
                   <TableCell>
                     {tier.priceMonth > 0 ? (
                       <span className="text-slate-900 font-medium">
