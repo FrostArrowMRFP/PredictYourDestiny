@@ -18,6 +18,11 @@ type AdminProviderHandler struct {
 	Cipher *secret.Cipher
 }
 
+type discoverProviderModelsRequest struct {
+	BaseURL string `json:"baseUrl" binding:"required"`
+	APIKey  string `json:"apiKey"`
+}
+
 // ProviderPayload is the API response for a provider.
 type ProviderPayload struct {
 	ID        uint   `json:"id"`
@@ -337,6 +342,26 @@ func (h *AdminProviderHandler) DiscoverProviderModels(c *gin.Context) {
 		return
 	}
 	models, err := ai.DiscoverProviderModels(c.Request.Context(), provider.BaseURL, apiKey)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch provider models"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": models})
+}
+
+// PreviewProviderModels discovers models before a provider is persisted. The
+// supplied key is used only for this request and is never returned or stored.
+func (h *AdminProviderHandler) PreviewProviderModels(c *gin.Context) {
+	var req discoverProviderModelsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "baseUrl is required"})
+		return
+	}
+	if err := ai.ValidateProviderBaseURL(req.BaseURL, false); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	models, err := ai.DiscoverProviderModels(c.Request.Context(), req.BaseURL, req.APIKey)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch provider models"})
 		return

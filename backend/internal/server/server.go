@@ -132,6 +132,7 @@ func New(deps Deps) *gin.Engine {
 			// AI Provider management
 			admin.GET("/providers", adminProvider.ListProviders)
 			admin.POST("/providers", adminProvider.CreateProvider)
+			admin.POST("/providers/discover-models", adminProvider.PreviewProviderModels)
 			admin.PUT("/providers/:id", adminProvider.UpdateProvider)
 			admin.DELETE("/providers/:id", adminProvider.DeleteProvider)
 			admin.POST("/providers/:id/default", adminProvider.SetDefaultProvider)

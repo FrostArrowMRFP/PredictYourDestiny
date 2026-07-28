@@ -64,7 +64,7 @@ PredictYourDestiny/
 
 ## OpenAI 兼容供应商配置
 
-在 Admin 的“模型供应商”页面录入 Base URL 和 API Key，保存后可点击“获取并选择模型”，从兼容 `/models` 接口拉取目录，再勾选要开放的模型并指定免费或付费层级。也可继续手动维护模型目录 JSON。密钥不得写入代码、README 或提交到 Git。
+在 Admin 的“模型供应商”页面录入 Base URL 和 API Key 后，即可在保存前点击“获取并选择模型”，从兼容 `/models` 接口拉取目录，再勾选要开放的模型并指定免费或付费层级；已保存的供应商也可以随时重新获取。也可继续手动维护模型目录 JSON。密钥不得写入代码、README 或提交到 Git。
 
 以下兼容配置已于 2026-07-23 通过 `/v1/models` 和 `/v1/chat/completions` 实际验证：
 

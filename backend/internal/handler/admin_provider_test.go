@@ -96,3 +96,15 @@ func TestAdminProviderRejectsKeyWithoutEncryptionConfig(t *testing.T) {
 		t.Fatalf("status = %d, want 503", c.Writer.Status())
 	}
 }
+
+func TestPreviewProviderModelsRejectsUnsafeURLBeforeRequest(t *testing.T) {
+	h := &AdminProviderHandler{}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/providers/discover-models",
+		bytes.NewBufferString(`{"baseUrl":"http://127.0.0.1:8080/v1","apiKey":"not-stored"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	h.PreviewProviderModels(c)
+	if c.Writer.Status() != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", c.Writer.Status())
+	}
+}

@@ -165,12 +165,59 @@ export default function ProvidersPage() {
     }
   }
 
+  const openFormModelPicker = async () => {
+    if (!form.baseUrl.trim()) {
+      alert('请先填写 Base URL')
+      return
+    }
+    if (!editingProvider && !form.apiKey.trim()) {
+      alert('请先填写 API Key')
+      return
+    }
+    const source: Provider = editingProvider || {
+      id: 0,
+      name: form.name || '新供应商',
+      baseUrl: form.baseUrl,
+      models: form.models,
+      isDefault: form.isDefault,
+      isEnabled: form.isEnabled,
+      sortOrder: 0,
+    }
+    setModelProvider(source)
+    setModelSearch('')
+    setLoadingModels(true)
+    const configured = configuredModels(source)
+    const initial: Record<string, 'free' | 'paid' | undefined> = {}
+    configured.forEach(model => { initial[model.id] = model.tier === 'paid' ? 'paid' : 'free' })
+    setSelectedModels(initial)
+    setAvailableModels(configured.map(model => model.id))
+    try {
+      const data = editingProvider
+        ? await apiRequest<{ models?: string[] }>(`/admin/providers/${editingProvider.id}/models`)
+        : await apiRequest<{ models?: string[] }>('/admin/providers/discover-models', {
+            method: 'POST',
+            body: { baseUrl: form.baseUrl, apiKey: form.apiKey },
+          })
+      setAvailableModels(Array.from(new Set([...(data.models || []), ...configured.map(model => model.id)])).sort())
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '获取模型列表失败')
+      setModelProvider(null)
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
   const applyModels = async () => {
     if (!modelProvider) return
     const models = availableModels
       .filter(id => selectedModels[id])
       .map(id => ({ id, label: id, tier: selectedModels[id] }))
     if (models.length === 0 && !confirm('当前没有选择任何模型，确定要清空模型目录吗？')) return
+    if (modelProvider.id === 0 || editingProvider?.id === modelProvider.id) {
+      setForm(current => ({ ...current, models: JSON.stringify(models) }))
+      setModelProvider(null)
+      return
+    }
     setSavingModels(true)
     try {
       await apiRequest(`/admin/providers/${modelProvider.id}`, {
@@ -341,7 +388,13 @@ export default function ProvidersPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pmodels">模型列表 (JSON)</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="pmodels">模型列表 (JSON)</Label>
+                <Button type="button" variant="outline" size="sm" onClick={() => void openFormModelPicker()}>
+                  <ListPlus className="mr-1.5 h-4 w-4" />
+                  获取并选择模型
+                </Button>
+              </div>
               <Textarea
                 id="pmodels"
                 value={form.models}
