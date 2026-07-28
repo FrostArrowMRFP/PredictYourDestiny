@@ -3,6 +3,7 @@ package ai
 import (
 	"errors"
 	"net/http"
+	"net/netip"
 	"testing"
 )
 
@@ -29,6 +30,26 @@ func TestValidateProviderBaseURL(t *testing.T) {
 				t.Fatalf("ValidateProviderBaseURL(%q) = %v, ok=%v", tt.url, err, tt.ok)
 			}
 		})
+	}
+}
+
+func TestSelectProviderAddrAllowsOnlyExplicitProxyFakeIPRanges(t *testing.T) {
+	public := netip.MustParseAddr("1.1.1.1")
+	private := netip.MustParseAddr("192.168.1.2")
+	fake4 := netip.MustParseAddr("198.18.0.109")
+	fake6 := netip.MustParseAddr("fdfe:dcba:9876::6d")
+
+	if got, ok := selectProviderAddr([]netip.Addr{private, public}, false); !ok || got != public {
+		t.Fatalf("public selection = %v, %v", got, ok)
+	}
+	if _, ok := selectProviderAddr([]netip.Addr{private, fake4, fake6}, false); ok {
+		t.Fatal("fake IP was accepted without opt-in")
+	}
+	if got, ok := selectProviderAddr([]netip.Addr{private, fake6, fake4}, true); !ok || got != fake4 {
+		t.Fatalf("opt-in fake IP selection = %v, %v", got, ok)
+	}
+	if _, ok := selectProviderAddr([]netip.Addr{private}, true); ok {
+		t.Fatal("ordinary private address was accepted")
 	}
 }
 

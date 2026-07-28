@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -47,10 +48,11 @@ func ValidateProviderBaseURL(raw string, allowPrivate bool) error {
 func isPublicProviderAddr(addr netip.Addr) bool {
 	return addr.IsValid() && !addr.IsLoopback() && !addr.IsPrivate() &&
 		!addr.IsLinkLocalUnicast() && !addr.IsLinkLocalMulticast() &&
-		!addr.IsMulticast() && !addr.IsUnspecified()
+		!addr.IsMulticast() && !addr.IsUnspecified() && !isProxyFakeIP(addr)
 }
 
 func newProviderHTTPClient() *http.Client {
+	allowProxyFakeIPs := strings.EqualFold(strings.TrimSpace(os.Getenv("AI_PROVIDER_ALLOW_PROXY_FAKE_IPS")), "true")
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
 		MaxIdleConns:    20,
@@ -64,15 +66,11 @@ func newProviderHTTPClient() *http.Client {
 			if err != nil {
 				return nil, err
 			}
-			for _, addr := range resolved {
-				if !isPublicProviderAddr(addr) {
-					return nil, fmt.Errorf("%w: DNS resolved to %s", ErrUnsafeProviderURL, addr)
-				}
+			addr, ok := selectProviderAddr(resolved, allowProxyFakeIPs)
+			if !ok {
+				return nil, fmt.Errorf("%w: DNS resolved only to private or special-use addresses", ErrUnsafeProviderURL)
 			}
-			if len(resolved) == 0 {
-				return nil, fmt.Errorf("provider host resolved to no addresses")
-			}
-			return dialer.DialContext(ctx, network, net.JoinHostPort(resolved[0].String(), port))
+			return dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
 		},
 	}
 	return &http.Client{
@@ -84,6 +82,38 @@ func newProviderHTTPClient() *http.Client {
 			return ValidateProviderBaseURL(req.URL.String(), false)
 		},
 	}
+}
+
+var proxyFakeIPPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("fdfe:dcba:9876::/48"),
+}
+
+func isProxyFakeIP(addr netip.Addr) bool {
+	for _, prefix := range proxyFakeIPPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func selectProviderAddr(resolved []netip.Addr, allowProxyFakeIPs bool) (netip.Addr, bool) {
+	for _, addr := range resolved {
+		if isPublicProviderAddr(addr) {
+			return addr, true
+		}
+	}
+	if allowProxyFakeIPs {
+		for _, wantIPv4 := range []bool{true, false} {
+			for _, addr := range resolved {
+				if addr.Is4() == wantIPv4 && isProxyFakeIP(addr) {
+					return addr, true
+				}
+			}
+		}
+	}
+	return netip.Addr{}, false
 }
 
 // CheckProviderHealth performs a cheap authenticated GET /models probe. It

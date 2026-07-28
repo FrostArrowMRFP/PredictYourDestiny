@@ -111,6 +111,7 @@ cp .env.example .env
 | `DATABASE_URL` | 必需，无默认值 | PostgreSQL DSN，支持 `postgresql://...` URL 或 libpq 关键字格式。未指定数据库名或使用 `postgres` 时，应用改用 `predictdestiny`；首次建库需要连接角色具有 `CREATEDB` 权限。 |
 | `JWT_SECRET` | 认证功能必需 | JWT 签名密钥。生产环境使用足够长的随机值；缺失时服务可以启动，但登录和鉴权不可用。 |
 | `AI_PROVIDER_ENCRYPTION_KEY` | 使用 AI 供应商时必需 | 用于加密数据库内供应商 API Key 的固定 AES-256-GCM 主密钥。使用 `openssl rand -base64 32` 生成，部署后必须稳定保存；丢失后已有密文无法解密。 |
+| `AI_PROVIDER_ALLOW_PROXY_FAKE_IPS` | 可选，默认 `false` | 仅供使用 Clash/Mihomo Fake-IP DNS 的本地环境。启用后只额外允许 `198.18.0.0/15` 与 `fdfe:dcba:9876::/48`，其他私网地址仍被 SSRF 防护拒绝；生产环境通常保持关闭。 |
 | `APP_ENV` | 可选，默认 `development` | 设为 `production` 时启用生产安全要求，并强制配置 CORS 白名单。 |
 | `CORS_ALLOWED_ORIGINS` | 生产环境必需 | 允许访问 API 的前台和 Admin Origin，逗号分隔，例如 `https://app.example.com,https://admin.example.com`。只填写 Origin，不包含路径。 |
 | `SERVER_ADDR` | 可选，默认 `:8080` | API 监听地址。 |
