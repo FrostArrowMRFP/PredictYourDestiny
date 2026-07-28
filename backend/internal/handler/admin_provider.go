@@ -317,3 +317,29 @@ func (h *AdminProviderHandler) CheckProviderHealth(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "healthy", "latencyMs": duration.Milliseconds()})
 }
+
+// DiscoverProviderModels fetches the saved provider's OpenAI-compatible model
+// catalog. It never returns or mutates the encrypted API key.
+func (h *AdminProviderHandler) DiscoverProviderModels(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid provider id"})
+		return
+	}
+	var provider model.AIProvider
+	if err := h.DB.First(&provider, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "provider not found"})
+		return
+	}
+	apiKey, err := h.Cipher.Decrypt(provider.APIKey)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "provider key is unavailable"})
+		return
+	}
+	models, err := ai.DiscoverProviderModels(c.Request.Context(), provider.BaseURL, apiKey)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to fetch provider models"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"models": models})
+}

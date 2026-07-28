@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -117,4 +119,68 @@ func CheckProviderHealth(ctx context.Context, baseURL, apiKey string) (time.Dura
 		return duration, fmt.Errorf("provider health check returned HTTP %d", resp.StatusCode)
 	}
 	return duration, nil
+}
+
+// DiscoverProviderModels returns the model IDs advertised by an
+// OpenAI-compatible GET /models endpoint. The response is bounded and model
+// IDs are deduplicated so a provider cannot make the admin UI consume
+// unbounded memory.
+func DiscoverProviderModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
+	if err := ValidateProviderBaseURL(baseURL, false); err != nil {
+		return nil, err
+	}
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return nil, err
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/models"
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	resp, err := newProviderHTTPClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 32<<10))
+		return nil, fmt.Errorf("provider model discovery returned HTTP %d", resp.StatusCode)
+	}
+	return decodeProviderModels(io.LimitReader(resp.Body, (2<<20)+1))
+}
+
+func decodeProviderModels(reader io.Reader) ([]string, error) {
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	decoder := json.NewDecoder(reader)
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode provider models: %w", err)
+	}
+	if len(payload.Data) > 5000 {
+		return nil, errors.New("provider returned too many models")
+	}
+	seen := make(map[string]struct{}, len(payload.Data))
+	models := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		id := strings.TrimSpace(item.ID)
+		if id == "" || len(id) > 128 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		models = append(models, id)
+	}
+	sort.Strings(models)
+	return models, nil
 }

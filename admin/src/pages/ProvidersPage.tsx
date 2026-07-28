@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Bot, Trash2, Edit, Check, Star, Activity } from 'lucide-react'
+import { Plus, Bot, Trash2, Edit, Check, Star, Activity, ListPlus, Search } from 'lucide-react'
 import { apiRequest } from '../api/client'
 import { PageHeader, EmptyState, LoadingState } from '../components/PageHeader'
 import { Card } from '../components/ui/Card'
@@ -34,7 +34,13 @@ interface Provider {
   isDefault: boolean
   isEnabled: boolean
   sortOrder: number
-  }
+}
+
+interface CatalogModel {
+  id: string
+  label?: string
+  tier: 'free' | 'paid'
+}
 
 export default function ProvidersPage() {
   const { t } = useTranslation()
@@ -43,6 +49,12 @@ export default function ProvidersPage() {
   const [showModal, setShowModal] = useState(false)
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null)
   const [checkingProvider, setCheckingProvider] = useState<number | null>(null)
+  const [modelProvider, setModelProvider] = useState<Provider | null>(null)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [selectedModels, setSelectedModels] = useState<Record<string, 'free' | 'paid' | undefined>>({})
+  const [modelSearch, setModelSearch] = useState('')
+  const [loadingModels, setLoadingModels] = useState(false)
+  const [savingModels, setSavingModels] = useState(false)
   const [form, setForm] = useState({
     name: '',
     baseUrl: '',
@@ -124,6 +136,58 @@ export default function ProvidersPage() {
     setShowModal(true)
   }
 
+  const configuredModels = (provider: Provider): CatalogModel[] => {
+    try {
+      const parsed = JSON.parse(provider.models) as CatalogModel[]
+      return Array.isArray(parsed) ? parsed.filter(model => model.id) : []
+    } catch {
+      return []
+    }
+  }
+
+  const openModelPicker = async (provider: Provider) => {
+    setModelProvider(provider)
+    setModelSearch('')
+    setLoadingModels(true)
+    const configured = configuredModels(provider)
+    const initial: Record<string, 'free' | 'paid' | undefined> = {}
+    configured.forEach(model => { initial[model.id] = model.tier === 'paid' ? 'paid' : 'free' })
+    setSelectedModels(initial)
+    setAvailableModels(configured.map(model => model.id))
+    try {
+      const data = await apiRequest<{ models?: string[] }>(`/admin/providers/${provider.id}/models`)
+      setAvailableModels(Array.from(new Set([...(data.models || []), ...configured.map(model => model.id)])).sort())
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '获取模型列表失败')
+      setModelProvider(null)
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
+  const applyModels = async () => {
+    if (!modelProvider) return
+    const models = availableModels
+      .filter(id => selectedModels[id])
+      .map(id => ({ id, label: id, tier: selectedModels[id] }))
+    if (models.length === 0 && !confirm('当前没有选择任何模型，确定要清空模型目录吗？')) return
+    setSavingModels(true)
+    try {
+      await apiRequest(`/admin/providers/${modelProvider.id}`, {
+        method: 'PUT',
+        body: { models: JSON.stringify(models) },
+      })
+      setModelProvider(null)
+      await loadProviders()
+    } finally {
+      setSavingModels(false)
+    }
+  }
+
+  const filteredModels = availableModels.filter(id =>
+    id.toLowerCase().includes(modelSearch.trim().toLowerCase()),
+  )
+
   return (
     <div>
       <PageHeader
@@ -196,6 +260,14 @@ export default function ProvidersPage() {
                         title="检查连接"
                       >
                         <Activity className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void openModelPicker(provider)}
+                        title="获取并选择模型"
+                      >
+                        <ListPlus className="w-4 h-4" />
                       </Button>
                       {!provider.isDefault && (
                         <Button
@@ -305,6 +377,71 @@ export default function ProvidersPage() {
               {t('common.cancel')}
             </Button>
             <Button onClick={handleSubmit}>{t('common.save')}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modelProvider !== null} onOpenChange={open => !open && setModelProvider(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>获取并选择模型</DialogTitle>
+            <DialogDescription>
+              从 {modelProvider?.name} 的 /models 接口获取目录。只有勾选的模型会对用户开放。
+            </DialogDescription>
+          </DialogHeader>
+          {loadingModels ? <LoadingState message="正在获取供应商模型…" /> : (
+            <>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  value={modelSearch}
+                  onChange={event => setModelSearch(event.target.value)}
+                  placeholder="搜索模型 ID"
+                  className="pl-9"
+                />
+              </div>
+              <div className="max-h-96 overflow-y-auto rounded-md border border-slate-200">
+                {filteredModels.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-slate-500">没有匹配的模型</div>
+                ) : filteredModels.map(id => {
+                  const selected = selectedModels[id]
+                  return (
+                    <div key={id} className="flex items-center gap-3 border-b border-slate-100 px-3 py-2 last:border-0">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(selected)}
+                        onChange={event => setSelectedModels(current => ({
+                          ...current,
+                          [id]: event.target.checked ? (current[id] || 'free') : undefined,
+                        }))}
+                      />
+                      <span className="min-w-0 flex-1 truncate font-mono text-xs" title={id}>{id}</span>
+                      <select
+                        value={selected || 'free'}
+                        disabled={!selected}
+                        onChange={event => setSelectedModels(current => ({
+                          ...current,
+                          [id]: event.target.value as 'free' | 'paid',
+                        }))}
+                        className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs disabled:opacity-40"
+                      >
+                        <option value="free">免费模型</option>
+                        <option value="paid">付费模型</option>
+                      </select>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="text-xs text-slate-500">
+                已选择 {Object.values(selectedModels).filter(Boolean).length} / {availableModels.length} 个模型。保存后仍需为启用成本预算的模型配置价格版本和预留额。
+              </div>
+            </>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModelProvider(null)}>取消</Button>
+            <Button onClick={() => void applyModels()} disabled={loadingModels || savingModels}>
+              {savingModels ? '保存中…' : '保存模型目录'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

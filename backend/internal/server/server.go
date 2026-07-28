@@ -136,6 +136,7 @@ func New(deps Deps) *gin.Engine {
 			admin.DELETE("/providers/:id", adminProvider.DeleteProvider)
 			admin.POST("/providers/:id/default", adminProvider.SetDefaultProvider)
 			admin.POST("/providers/:id/health", adminProvider.CheckProviderHealth)
+			admin.GET("/providers/:id/models", adminProvider.DiscoverProviderModels)
 
 			// Membership tier management
 			admin.GET("/tiers", adminTier.ListTiers)
